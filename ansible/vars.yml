@@ -1,0 +1,4 @@
+---
+ntp_server: "10.10.10.10"
+user: wmartinez
+Password: admin@321

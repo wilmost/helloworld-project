@@ -1,0 +1,84 @@
+---
+- name: Configurar servidor Oracle Linux
+  hosts: oracle_servers
+  become: 'yes'
+
+  vars_files: 
+    - vars.yaml
+  tasks:
+
+    - name: Instalar Docker
+      yum:
+        name: docker
+        state: present
+
+    - name: Instalar Docker Compose
+      shell: |
+        curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+        chmod +x /usr/local/bin/docker-compose
+      args:
+        executable: /bin/bash
+
+    - name: Instalar Chrony y configurar el servidor NTP
+      dnf:
+        name: chrony
+        state: present
+    - name: configurar servicio chrony
+      systemd:
+        name: chronyd
+        enabled: 'yes'
+        state: started
+    - name: update config  
+      lineinfile:
+        path: /etc/chrony.conf
+        line: "{{ntp_server}}"
+
+    - name: Instalar herramientas de red y wget
+      yum:
+        name: '{{ item }}'
+        state: present
+      loop:
+        - iputils
+        - net-tools
+        - wget
+
+    - name: Agregar un usuario y darle permisos de sudo
+      user:
+        name: "{{user}}"
+        state: present
+        createhome: 'yes'
+      become: 'yes'
+      become_user: root
+    
+    - name: agregar password
+      vars_prompt:
+        - name: "{{password}}"
+          prompt: Ingrese la contraseña para el nuevo usuario
+          private: 'yes'
+      ansible_become_password: '{{ {{password}}| password_hash(''sha512'') }}'
+      sudo:
+        name: '{{ user }} ALL=(ALL) NOPASSWD: ALL'
+        dest: /etc/sudoers.d/{{user}
+
+
+    - name: Configurar Firewall y permitir accesos por puertos 8080, 8081 y 443
+      firewalld:
+        service: '{{ item }}'
+        state: enabled
+        permanent: 'yes'
+        immediate: 'yes'
+      loop:
+        - http
+        - https
+      when: '''{{ item }}'' not in ansible_firewalld.services'
+    - name: Abrir puertos adicionales
+      firewalld:
+        port: '{{ item }}/tcp'
+        state: enabled
+        permanent: 'yes'
+        immediate: 'yes'
+      loop:
+        - 8080
+        - 8081
+        - 443
+      when: '''{{ item }}'' not in ansible_firewalld.ports'
